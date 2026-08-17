@@ -1,0 +1,665 @@
+/* RESET & BASE */
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  :root {
+    --bg-main: #121214;
+    --bg-card: #1e1e22;
+    --bg-input: #29292e;
+    --border-color: #323238;
+    --primary: #00b37e;
+    --primary-hover: #00875f;
+    --accent: #8257e5;
+    --text-main: #e1e1e6;
+    --text-muted: #a8a8b3;
+    --danger: #f75a68;
+    --warning: #fba94c;
+    --radius: 12px;
+
+    /* Calendário de constância */
+    --cal-upper: #86efac;
+    --cal-lower: #14532d;
+    --cal-cardio: #3b82f6;
+  }
+
+  body {
+    background-color: var(--bg-main);
+    color: var(--text-main);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    padding: 0;
+    margin: 0;
+  }
+
+  .app-container {
+    width: 100%;
+    max-width: 480px;
+    min-height: 100vh;
+    background-color: var(--bg-main);
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    padding-bottom: 20px;
+  }
+
+  /* CABEÇALHO */
+  header {
+    background-color: var(--bg-card);
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .header-titles {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  header h1 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .exercicio-atual {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .timer-badge {
+    background-color: var(--bg-input);
+    color: var(--primary);
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-weight: 700;
+    font-size: 0.9rem;
+    letter-spacing: 0.5px;
+    border: 1px solid var(--border-color);
+  }
+
+  /* CONTEÚDO */
+  .content {
+    padding: 20px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* CARDS */
+  .card {
+    background-color: var(--bg-card);
+    border-radius: var(--radius);
+    padding: 16px;
+    border: 1px solid var(--border-color);
+  }
+
+  .card-title {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+
+  /* BLOCO INFORMATIVO PAINEL SUPERIOR */
+  .info-bar-top {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px 10px;
+    background-color: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  .info-bar-top span {
+    color: var(--primary);
+  }
+
+  .next-ex-label {
+    margin-top: 8px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+
+  .next-ex-label strong {
+    color: var(--text-main);
+  }
+
+  /* BOTÕES */
+  .btn {
+    width: 100%;
+    padding: 14px 20px;
+    border-radius: var(--radius);
+    border: none;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.1s;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn:active {
+    transform: scale(0.98);
+  }
+
+  .btn-primary {
+    background-color: var(--primary);
+    color: #ffffff;
+  }
+
+  .btn-primary:hover {
+    background-color: var(--primary-hover);
+  }
+
+  .btn-secondary {
+    background-color: var(--bg-input);
+    color: var(--text-main);
+    border: 1px solid var(--border-color);
+  }
+
+  .btn-accent {
+    background-color: var(--accent);
+    color: #ffffff;
+  }
+
+  .btn-sm-edit {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    border-radius: 6px;
+    background-color: var(--bg-input);
+    color: var(--warning);
+    border: 1px solid var(--border-color);
+    cursor: pointer;
+  }
+
+  /* FORMULÁRIOS & INPUTS */
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  input, textarea, select {
+    width: 100%;
+    padding: 12px;
+    background-color: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    color: var(--text-main);
+    font-size: 1rem;
+    outline: none;
+  }
+
+  input:focus, textarea:focus, select:focus {
+    border-color: var(--primary);
+  }
+
+  textarea {
+    resize: vertical;
+    min-height: 80px;
+  }
+
+  /* LISTAS */
+  .list-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .menu-item {
+    background-color: var(--bg-card);
+    padding: 18px 20px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border-color);
+    font-size: 1.1rem;
+    font-weight: 600;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    transition: border-color 0.2s;
+  }
+
+  .menu-item:hover {
+    border-color: var(--primary);
+  }
+
+  .menu-item::after {
+    content: "➔";
+    color: var(--primary);
+  }
+
+  /* TABELA / LISTA DE SÉRIES */
+  .series-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+  }
+
+  .series-table th {
+    text-align: left;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    padding: 8px 4px;
+    border-bottom: 1px solid var(--border-color);
+    text-transform: uppercase;
+  }
+
+  .series-table td {
+    padding: 10px 4px;
+    font-size: 0.9rem;
+    border-bottom: 1px solid var(--bg-input);
+  }
+
+  /* HISTÓRICO */
+  .history-item {
+    background-color: var(--bg-input);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    font-size: 0.85rem;
+    display: flex;
+    justify-content: space-between;
+    border: 1px solid transparent;
+  }
+
+  .history-item-atual {
+    background-color: rgba(0, 179, 126, 0.15);
+    border-color: var(--primary);
+    font-weight: 700;
+  }
+
+  .history-item-atual span {
+    color: var(--primary);
+  }
+
+  /* METRICAS SUMMARY */
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .metric-card {
+    background-color: var(--bg-input);
+    padding: 12px;
+    border-radius: var(--radius);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .metric-card .value {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--primary);
+  }
+
+  .metric-card .label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+  }
+
+  /* SPINNER / OVERLAY */
+  .loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(18, 18, 20, 0.85);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 999;
+    gap: 12px;
+  }
+
+  .spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid var(--border-color);
+    border-top: 4px solid var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  .hidden {
+    display: none !important;
+  }
+
+  /* Customização para o input único de busca */
+.input-busca-estilizado {
+  width: 100%;
+  padding: 10px;
+  background-color: #1f1f23;
+  border: 1px solid #27272a;
+  border-radius: 8px;
+  color: #e4e4e7;
+  font-size: 0.95rem;
+}
+
+/* Bandeja de seleção menor e acoplada perfeitamente ao input */
+.bandeja-suspensa {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  max-height: 200px;
+  overflow-y: auto;
+  background-color: #18181b;
+  border: 1px solid #27272a;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  z-index: 50;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+}
+
+/* Botão de aquecimento ultra discreto perto das séries */
+.btn-aquecimento-discreto {
+  background: transparent;
+  border: 1px solid #3f3f46;
+  color: #a1a1aa;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-aquecimento-discreto:hover {
+  border-color: #f59e0b;
+  color: #f59e0b;
+}
+
+/* ALERTA DE TEMPO DE DESCANSO: o TEMA INTEIRO do app muda de cor,
+   lidas das células F2 (aviso) e G2 (alerta) da planilha de cada rotina.
+   Redefinir as variáveis CSS no body faz cascata pra tudo que usa var(--primary)/var(--bg-*). */
+.app-container, header, .card, .metric-card, .info-bar-top, .btn-primary {
+  transition: background-color 0.4s ease, border-color 0.4s ease, color 0.4s ease;
+}
+
+body.aviso-descanso {
+  --primary: var(--warning);
+  --bg-main: #1a1509;
+  --bg-card: #241d10;
+  --bg-input: #2e2513;
+  --border-color: #4a3a16;
+}
+
+body.alerta-descanso {
+  --primary: var(--danger);
+  --bg-main: #1c0d0f;
+  --bg-card: #291115;
+  --bg-input: #33151a;
+  --border-color: #5c2029;
+}
+
+body.aviso-descanso .app-container,
+body.alerta-descanso .app-container {
+  background-color: var(--bg-main);
+}
+
+body.aviso-descanso #tempo-descanso-display,
+body.alerta-descanso #tempo-descanso-display {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+/* Botão "Manter tela ativa" */
+#btn-tela-ativa.tela-ativa-ligada {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* Botão pequeno que abre o cronômetro de descanso em tela cheia */
+.btn-cronometro-mini {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--primary);
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  font-size: 1rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* Modal do cronômetro de descanso, em tela cheia */
+.modal-cronometro {
+  position: fixed;
+  inset: 0;
+  background-color: var(--bg-main);
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-cronometro.hidden {
+  display: none !important;
+}
+
+.modal-cronometro-fechar {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  font-size: 1.3rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.modal-cronometro-conteudo {
+  text-align: center;
+  padding: 0 24px;
+}
+
+.modal-cronometro-exercicio {
+  font-size: 1rem;
+  color: var(--text-main);
+  margin-bottom: 4px;
+}
+
+.modal-cronometro-label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 20px;
+}
+
+.modal-cronometro-tempo {
+  font-size: 6rem;
+  font-weight: 800;
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.modal-cronometro-tempo.zerado {
+  color: var(--danger);
+  animation: pulso-cronometro 1s ease-in-out infinite;
+}
+
+@keyframes pulso-cronometro {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+}
+
+/* Detalhamento de séries no relatório final */
+.relatorio-exercicio-bloco {
+  margin-bottom: 14px;
+}
+.relatorio-exercicio-bloco:last-child {
+  margin-bottom: 0;
+}
+.relatorio-exercicio-nome {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 6px;
+}
+.relatorio-serie-linha {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--text-main);
+  padding: 4px 0;
+  border-top: 1px solid var(--bg-input);
+}
+.relatorio-serie-linha span:last-child {
+  color: var(--text-muted);
+}
+
+/* CALENDÁRIO DE CONSTÂNCIA (tela de seleção de treino) */
+.calendario-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.calendario-dia-semana {
+  font-size: 0.65rem;
+  text-align: center;
+  color: var(--text-muted);
+  padding-bottom: 4px;
+  font-weight: 600;
+}
+
+.calendario-dia {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  background-color: var(--bg-input);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  color: var(--text-main);
+  position: relative;
+}
+
+.calendario-dia.vazio {
+  background: transparent;
+}
+
+.calendario-dia.hoje {
+  box-shadow: inset 0 0 0 2px var(--primary);
+}
+
+.calendario-dia.treinado {
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.calendario-dia .dia-numero {
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.calendario-dia .dia-label {
+  font-size: 0.52rem;
+  opacity: 0.95;
+  line-height: 1.1;
+}
+
+.calendario-legenda {
+  display: flex;
+  gap: 12px;
+  margin-top: 10px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+
+.legenda-cor {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+/* SELETOR DE MOTIVAÇÃO (0 a 5) — tela de registro de cardio */
+.seletor-motivacao {
+  display: flex;
+  gap: 6px;
+}
+
+.motivacao-opcao {
+  flex: 1;
+  padding: 10px 0;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-main);
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.motivacao-opcao.selecionada {
+  background-color: var(--primary);
+  border-color: var(--primary);
+  color: #ffffff;
+}

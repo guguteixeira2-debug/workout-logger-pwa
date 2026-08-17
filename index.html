@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#121214">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Workout">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <title>Workout Logger</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* Faixa de status de conexão (offline / sincronizando) */
+    #status-conexao {
+      position: sticky;
+      top: 0;
+      z-index: 200;
+      text-align: center;
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 6px 12px;
+      display: none;
+    }
+    #status-conexao.offline {
+      display: block;
+      background-color: var(--danger);
+      color: #ffffff;
+    }
+    #status-conexao.sincronizando {
+      display: block;
+      background-color: var(--warning);
+      color: #121214;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="status-conexao"></div>
+
+  <div class="app-container">
+    <!-- Cabeçalho Global -->
+    <header>
+      <div class="header-titles">
+        <h1 id="app-title">Workout Logger</h1>
+        <p id="exercicio-atual-display" class="exercicio-atual hidden">-</p>
+      </div>
+      <div style="text-align: right;">
+        <div id="timer-display" class="timer-badge hidden">00:00:00</div>
+        <div id="horario-inicio-display" class="hidden" style="font-size: 0.7rem; color: var(--text-muted); margin-top: 4px;">Início: --:--</div>
+      </div>
+    </header>
+
+    <!-- Overlay de Carregamento -->
+    <div id="loading-overlay" class="loading-overlay hidden">
+      <div class="spinner"></div>
+      <p id="loading-text" style="color: var(--text-muted); font-size: 0.9rem;">Processando...</p>
+    </div>
+
+    <!-- 1. Tela: Menu de Seleção de Treino -->
+    <div id="tela-menu" class="content">
+
+      <!-- Acesso rápido para editar a planilha diretamente -->
+      <a href="https://docs.google.com/spreadsheets/d/1MSzzSPPyIxDbeAYrpCXlitkygkAOTMe4TvAeQsw2uiw/edit?usp=sharing" target="_blank" rel="noopener"
+         class="btn btn-secondary"
+         style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px;">
+        📊 Abrir Planilha
+      </a>
+
+      <!-- Calendário de Constância -->
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <button type="button" class="btn-cronometro-mini" onclick="app.mudarMesCalendario(-1)">‹</button>
+          <div class="card-title" id="calendario-mes-label" style="margin-bottom: 0;">-- --</div>
+          <button type="button" class="btn-cronometro-mini" onclick="app.mudarMesCalendario(1)">›</button>
+        </div>
+        <div id="calendario-treinos" class="calendario-grid">
+          <!-- Preenchido via JavaScript -->
+        </div>
+        <div class="calendario-legenda">
+          <span><i class="legenda-cor" style="background: var(--cal-upper);"></i>Upper</span>
+          <span><i class="legenda-cor" style="background: var(--cal-lower);"></i>Lower</span>
+          <span><i class="legenda-cor" style="background: var(--cal-cardio);"></i>Cardio</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Selecione o Treino do Dia</div>
+        <div id="lista-rotinas" class="list-menu">
+          <!-- Preenchido via Javascript -->
+        </div>
+      </div>
+    </div>
+
+    <!-- 1.5 Tela: Pré-Treino (pergunta a academia antes de começar as séries) -->
+    <div id="tela-pre-treino" class="content hidden">
+      <div class="card" style="text-align: center;">
+        <h2 style="font-size: 1.3rem; margin-bottom: 4px;">Iniciar: <span id="pre-treino-nome-rotina" style="color: var(--primary);">--</span></h2>
+        <p style="color: var(--text-muted); font-size: 0.85rem;">Antes de começar, onde você está treinando hoje?</p>
+      </div>
+
+      <div class="card">
+        <div class="form-group" style="margin-bottom: 0;">
+          <label for="input-academia-inicio">Academia</label>
+          <input type="text" id="input-academia-inicio" list="lista-academias" placeholder="Ex: Smart Fit - Unidade Centro">
+          <datalist id="lista-academias"></datalist>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" onclick="app.confirmarInicioTreino()">
+        Começar Treino
+      </button>
+      <button class="btn btn-secondary" style="margin-top: 8px;" onclick="app.mostrarTela('tela-menu')">
+        Voltar
+      </button>
+    </div>
+
+    <!-- 2. Tela: Exercício em Andamento -->
+    <div id="tela-treino" class="content hidden">
+
+      <!-- Painel Superior: Descanso, Séries Restantes e Próximo Exercício -->
+      <div class="card" style="padding: 12px 16px;">
+        <div class="info-bar-top">
+          <div>Última série: <span id="tempo-descanso-display">--:--</span></div>
+          <button type="button" id="btn-abrir-cronometro" class="btn-cronometro-mini" onclick="app.abrirCronometroDescanso()" title="Cronômetro">⏱</button>
+          <div>Restam: <span id="series-restantes-display">0</span> série(s)</div>
+        </div>
+        <div class="next-ex-label">
+          Próximo: <strong id="proximo-exercicio-display">Nenhum (Último exercício)</strong>
+        </div>
+      </div>
+
+      <!-- Detalhes e Cabeçalho do Exercício -->
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div>
+            <h2 id="ex-nome" style="font-size: 1.4rem; margin-bottom: 4px;">--</h2>
+            <p id="ex-grupos" style="font-size: 0.85rem; color: var(--text-muted);">--</p>
+          </div>
+          <div style="text-align: right;">
+            <span class="card-title">Séries Alvo</span>
+            <div id="ex-series-alvo" style="font-size: 1.2rem; font-weight: 700; color: var(--primary);">0</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Histórico Anterior -->
+      <div class="card">
+        <div class="card-title">Última Execução</div>
+        <div id="ex-historico-conteudo">
+          <p style="font-size: 0.85rem; color: var(--text-muted);">Nenhum histórico encontrado.</p>
+        </div>
+      </div>
+
+      <!-- Formulário de Registro / Edição de Série -->
+      <div class="card">
+        <div class="card-title" id="form-serie-titulo">Registrar Série</div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="input-peso">Carga (kg)</label>
+            <input type="number" id="input-peso" step="0.5" placeholder="80" inputmode="decimal" oninput="app.atualizarPreview1RM()">
+          </div>
+          <div class="form-group">
+            <label for="input-reps">Repetições</label>
+            <input type="number" id="input-reps" step="1" placeholder="10" inputmode="numeric" oninput="app.atualizarPreview1RM()">
+          </div>
+        </div>
+
+        <div id="preview-1rm" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px; margin-top: -6px;">
+          1RM estimado: --
+        </div>
+
+        <div class="form-group">
+          <label for="input-rpe">RPE (Esforço Percebido 1-10)</label>
+          <input type="number" id="input-rpe" min="1" max="10" step="0.5" placeholder="8" inputmode="decimal">
+        </div>
+
+        <div class="form-group">
+          <label for="input-obs-serie">Observação da Série</label>
+          <input type="text" id="input-obs-serie" placeholder="Ex: Carga boa, falhei na última rep">
+        </div>
+
+        <div style="display: flex; gap: 8px;">
+          <button id="btn-salvar-serie" class="btn btn-primary" onclick="app.salvarSerie()">
+            Salvar Série
+          </button>
+          <button id="btn-cancelar-edicao" class="btn btn-secondary hidden" onclick="app.cancelarEdicaoSerie()">
+            Cancelar
+          </button>
+        </div>
+      </div>
+
+      <!-- Tabela Única de Séries Concluídas (editável por linha) -->
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <div class="card-title" style="margin-bottom: 0;">Séries Concluídas Nesta Sessão</div>
+
+          <button
+            type="button"
+            id="btn-aquecimento"
+            onclick="app.toggleAquecimento()"
+            class="btn-aquecimento-discreto"
+          >
+            <span>🔥 Aquecimento</span>
+          </button>
+        </div>
+
+        <table class="series-table">
+          <thead>
+            <tr>
+              <th>Série</th>
+              <th>Carga</th>
+              <th>Reps</th>
+              <th>RPE</th>
+              <th>1RM Est.</th>
+              <th>Obs</th>
+              <th style="text-align: right;">Ação</th>
+            </tr>
+          </thead>
+          <tbody id="tabela-series-correntes">
+            <!-- Preenchido via JavaScript -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Exercício Atual: lista selecionável dos exercícios desse treino -->
+      <div class="card">
+        <label for="select-exercicio">Exercício Atual</label>
+        <select
+          id="select-exercicio"
+          onchange="app.selecionarExercicio(this.value)"
+          style="margin-top: 6px;"
+        >
+          <option value="">Selecione um exercício...</option>
+        </select>
+      </div>
+
+      <!-- Navegação entre Exercícios -->
+      <button id="btn-exercicio-anterior" class="btn btn-secondary" onclick="app.exercicioAnterior()">
+        ◀ Exercício Anterior
+      </button>
+
+      <!-- Ação Finalizar Exercício -->
+      <button id="btn-finalizar-exercicio" class="btn btn-accent" onclick="app.finalizarExercicio()">
+        Finalizar Exercício
+      </button>
+
+      <!-- Botão de Finalizar Treino Antecipado no Fundo da Tela -->
+      <div style="margin-top: 24px; margin-bottom: 16px; padding: 0 4px;">
+        <button
+          id="btn-encerrar-antecipado"
+          class="btn hidden"
+          style="background-color: transparent; border: 1px solid var(--danger); color: var(--danger); width: 100%; font-weight: 600;"
+          onclick="app.confirmarEncerrarTreino()">
+          Finalizar Treino Antecipadamente
+        </button>
+      </div>
+
+      <!-- Impede a tela de suspender durante o treino (Wake Lock) -->
+      <div style="margin-bottom: 8px; padding: 0 4px;">
+        <button type="button" id="btn-tela-ativa" class="btn btn-secondary" onclick="app.alternarTelaAtiva()">
+          🔒 Manter tela ativa durante o treino
+        </button>
+      </div>
+
+      <!-- Cronômetro Simples em Tela Cheia (modal) -->
+      <div id="modal-cronometro" class="modal-cronometro hidden">
+        <button type="button" class="modal-cronometro-fechar" onclick="app.fecharCronometroDescanso()">✕</button>
+        <div class="modal-cronometro-conteudo">
+          <div class="modal-cronometro-exercicio" id="modal-cronometro-exercicio">--</div>
+          <div class="modal-cronometro-label">Cronômetro</div>
+          <div id="modal-cronometro-tempo" class="modal-cronometro-tempo">00:00</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 3. Tela: Relatório Final do Treino -->
+    <div id="tela-relatorio" class="content hidden">
+      <div class="card" style="text-align: center;">
+        <h2 style="color: var(--primary); font-size: 1.5rem; margin-bottom: 4px;">Treino Concluído!</h2>
+        <p style="color: var(--text-muted); font-size: 0.85rem;">Confira o resumo das suas métricas de desempenho:</p>
+      </div>
+
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <span class="label">Tempo Total</span>
+          <span id="relatorio-tempo" class="value">00:00:00</span>
+        </div>
+        <div class="metric-card">
+          <span class="label">Carga Total</span>
+          <span id="relatorio-carga" class="value">0 kg</span>
+        </div>
+        <div class="metric-card">
+          <span class="label">Volume Total</span>
+          <span id="relatorio-volume" class="value">0 kg</span>
+        </div>
+        <div class="metric-card">
+          <span class="label">RPE Médio</span>
+          <span id="relatorio-rpe" class="value">0</span>
+        </div>
+        <div class="metric-card">
+          <span class="label">Índice de Fadiga</span>
+          <span id="relatorio-fadiga" class="value">0</span>
+        </div>
+        <div class="metric-card">
+          <span class="label">Maior 1RM Est.</span>
+          <span id="relatorio-1rm" class="value">0 kg</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Resumo do Treino</div>
+        <p style="font-size: 0.9rem; margin-bottom: 6px;">Exercícios concluídos: <strong id="relatorio-exercicios" style="color: var(--primary);">0</strong></p>
+        <p style="font-size: 0.9rem;">Séries totais realizadas: <strong id="relatorio-series" style="color: var(--primary);">0</strong></p>
+      </div>
+
+      <!-- Detalhamento de todas as séries feitas no treino, exercício por exercício -->
+      <div class="card">
+        <div class="card-title">Todas as Séries do Treino</div>
+        <div id="relatorio-series-detalhe">
+          <!-- Preenchido via JavaScript -->
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="form-group" style="margin-bottom: 0;">
+          <label for="input-obs-geral">Observações Gerais do Treino</label>
+          <textarea id="input-obs-geral" placeholder="Ex: Treino muito intenso, boa recuperação entre as séries, fadiga no final..."></textarea>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" onclick="app.finalizarTreino()">
+        Salvar e Encerrar
+      </button>
+    </div>
+
+    <!-- 4. Tela: Registro de Cardio (independente do treino de força) -->
+    <div id="tela-cardio-registro" class="content hidden">
+      <div class="card" style="text-align: center;">
+        <h2 style="font-size: 1.3rem; margin-bottom: 4px;">🏃 Registro de Cardio</h2>
+        <p style="color: var(--text-muted); font-size: 0.85rem;" id="cardio-academia-display">Academia: --</p>
+      </div>
+
+      <div class="card">
+        <div class="form-group">
+          <label for="input-cardio-tipo-registro">Tipo</label>
+          <input type="text" id="input-cardio-tipo-registro" list="lista-cardio-tipos" placeholder="Ex: Esteira, Bike, Elíptico">
+          <datalist id="lista-cardio-tipos"></datalist>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="input-cardio-duracao-registro">Duração (min)</label>
+            <input type="number" id="input-cardio-duracao-registro" step="1" min="0" placeholder="20" inputmode="numeric">
+          </div>
+          <div class="form-group">
+            <label for="input-cardio-bpm">BPM Médio</label>
+            <input type="number" id="input-cardio-bpm" step="1" min="0" placeholder="140" inputmode="numeric">
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 0;">
+          <label>Motivação de Início (0 a 5)</label>
+          <div id="seletor-motivacao" class="seletor-motivacao">
+            <button type="button" class="motivacao-opcao" data-valor="0" onclick="app.selecionarMotivacao(0)">0</button>
+            <button type="button" class="motivacao-opcao" data-valor="1" onclick="app.selecionarMotivacao(1)">1</button>
+            <button type="button" class="motivacao-opcao" data-valor="2" onclick="app.selecionarMotivacao(2)">2</button>
+            <button type="button" class="motivacao-opcao" data-valor="3" onclick="app.selecionarMotivacao(3)">3</button>
+            <button type="button" class="motivacao-opcao" data-valor="4" onclick="app.selecionarMotivacao(4)">4</button>
+            <button type="button" class="motivacao-opcao" data-valor="5" onclick="app.selecionarMotivacao(5)">5</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="form-group" style="margin-bottom: 0;">
+          <label for="input-cardio-obs-registro">Observação</label>
+          <input type="text" id="input-cardio-obs-registro" placeholder="Ex: Ritmo moderado, inclinação 3%">
+        </div>
+      </div>
+
+      <button class="btn btn-primary" onclick="app.salvarCardio()">
+        Salvar Cardio
+      </button>
+      <button class="btn btn-secondary" style="margin-top: 8px;" onclick="app.mostrarTela('tela-menu')">
+        Cancelar
+      </button>
+    </div>
+
+  </div>
+
+  <script src="app.js"></script>
+
+  <script>
+    // REGISTRO DO SERVICE WORKER — agora numa origem estável (GitHub Pages),
+    // sem o problema de redirecionamento variável do Apps Script.
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('service-worker.js')
+          .then(function () { console.log('Service Worker registrado.'); })
+          .catch(function (err) { console.warn('Service Worker não pôde ser registrado:', err); });
+      });
+    }
+  </script>
+</body>
+</html>
