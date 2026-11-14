@@ -4,7 +4,7 @@
  * IMPORTANTE: troque a URL abaixo pela URL do SEU Web App do Apps Script
  * (Extensões > Apps Script > Implantar > Gerenciar implantações > copiar a URL "...exec").
  */
-const API_BASE_URL = "https://script.google.com/macros/s/AKfycbwN7f3Pm4qFxDjIzaTl0bDPjwrI5NiffrQmAi2MvZwhE83-Chws4zzYHuTuroRRKMHaKA/exec";
+const API_BASE_URL = "https://script.google.com/macros/s/AKfycbyKc-l7QfCXbAAZrWacm9fI6XzDE6n1KIb_dZj6duWCj0gtaiKFISEGrX5n0W9XaLh_Bw/exec";
 
 /**
  * TOKEN DA API: o backend (Api.gs) exige um token. Ele é pedido uma única vez e
