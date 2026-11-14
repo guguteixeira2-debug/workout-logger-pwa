@@ -1,4 +1,4 @@
-const CACHE_NAME = 'workout-logger-shell-v2';
+const CACHE_NAME = 'workout-logger-shell-v3';
 
 const ARQUIVOS_SHELL = [
   './',
@@ -33,25 +33,28 @@ self.addEventListener('activate', function (event) {
   );
 });
 
-// Cache-first para os arquivos do próprio app (HTML/CSS/JS/ícones — estáticos).
-// Chamadas à API do Apps Script (fetch pro domínio script.google.com) NÃO
-// passam por aqui — precisam de rede de verdade pra ler/escrever na planilha.
+// Rede primeiro, cache como reserva. Assim, quando você publica uma versão nova no
+// GitHub Pages ela chega no próximo carregamento (com cache-first o app ficava preso
+// na versão antiga). Sem internet, usa o que está guardado no cache.
+// Chamadas à API do Apps Script (outro domínio) não passam por aqui.
 self.addEventListener('fetch', function (event) {
   if (event.request.method !== 'GET') return;
 
   var url = new URL(event.request.url);
-  if (url.origin !== self.location.origin) return; // deixa passar direto (ex: chamadas à API do Apps Script)
+  if (url.origin !== self.location.origin) return;
 
   event.respondWith(
-    caches.match(event.request).then(function (cacheado) {
-      if (cacheado) return cacheado;
-
-      return fetch(event.request).then(function (resposta) {
+    fetch(event.request).then(function (resposta) {
+      if (resposta && resposta.ok) {
         var copia = resposta.clone();
         caches.open(CACHE_NAME).then(function (cache) {
           cache.put(event.request, copia);
         });
-        return resposta;
+      }
+      return resposta;
+    }).catch(function () {
+      return caches.match(event.request).then(function (cacheado) {
+        return cacheado || caches.match('./index.html');
       });
     })
   );
