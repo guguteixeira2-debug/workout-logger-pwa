@@ -78,6 +78,10 @@
         📊 Abrir Planilha
       </a>
 
+      <button type="button" class="btn btn-secondary" onclick="app.abrirProgresso()">
+        📈 Progresso e Recordes
+      </button>
+
       <!-- Calendário de Constância -->
       <div class="card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
@@ -397,6 +401,43 @@
       <button class="btn btn-secondary" style="margin-top: 8px;" onclick="app.mostrarTela('tela-menu')">
         Cancelar
       </button>
+    </div>
+
+    <!-- 5. Tela: Progresso e Recordes -->
+    <div id="tela-progresso" class="content hidden">
+      <div class="card" style="text-align: center;">
+        <h2 style="font-size: 1.3rem; margin-bottom: 4px;">📈 Progresso e Recordes</h2>
+        <p style="color: var(--text-muted); font-size: 0.85rem;">Evolução e recordes pessoais por exercício</p>
+      </div>
+
+      <div class="card">
+        <div class="form-group" style="margin-bottom: 0;">
+          <label for="select-progresso-exercicio">Exercício</label>
+          <select id="select-progresso-exercicio" onchange="app.carregarProgressoExercicio(this.value)"></select>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Recordes do exercício</div>
+        <div id="progresso-recordes"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Evolução</div>
+        <div id="seletor-metrica" class="seletor-motivacao">
+          <button type="button" class="motivacao-opcao selecionada" data-metrica="rm" onclick="app.selecionarMetricaProgresso('rm')">1RM</button>
+          <button type="button" class="motivacao-opcao" data-metrica="volume" onclick="app.selecionarMetricaProgresso('volume')">Volume</button>
+          <button type="button" class="motivacao-opcao" data-metrica="rpe" onclick="app.selecionarMetricaProgresso('rpe')">RPE</button>
+        </div>
+        <div id="grafico-progresso" style="margin-top: 12px;"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Todos os recordes</div>
+        <div id="progresso-todos-recordes"></div>
+      </div>
+
+      <button class="btn btn-secondary" onclick="app.mostrarTela('tela-menu')">Voltar</button>
     </div>
 
   </div>
