@@ -6,30 +6,63 @@
  */
 const API_BASE_URL = "https://script.google.com/macros/s/AKfycbwN7f3Pm4qFxDjIzaTl0bDPjwrI5NiffrQmAi2MvZwhE83-Chws4zzYHuTuroRRKMHaKA/exec";
 
+/**
+ * TOKEN DA API: o backend (Api.gs) exige um token. Ele é pedido uma única vez e
+ * guardado no localStorage deste aparelho (NÃO deixe o token fixo neste arquivo:
+ * o repositório do GitHub Pages é público).
+ */
+const WORKOUT_TOKEN_KEY = 'WORKOUT_LOGGER_API_TOKEN';
+
+function obterToken() {
+  var token = null;
+  try { token = localStorage.getItem(WORKOUT_TOKEN_KEY); } catch (e) {}
+  if (!token) {
+    token = (window.prompt('Cole o token da API do Workout Logger (gerado no Apps Script com API_gerarToken):') || '').trim();
+    if (token) {
+      try { localStorage.setItem(WORKOUT_TOKEN_KEY, token); } catch (e) {}
+    }
+  }
+  return token || '';
+}
+
+function esquecerToken() {
+  try { localStorage.removeItem(WORKOUT_TOKEN_KEY); } catch (e) {}
+}
+
+// Erros vindos do servidor (resposta JSON com erro:true) levam erroApi = true.
+// Erros de rede (fetch falhou) NÃO levam essa marca: são temporários.
+function tratarRespostaApi(dados) {
+  if (dados && dados.erro) {
+    var err = new Error(dados.mensagem || 'Erro desconhecido na API');
+    err.erroApi = true;
+    if (dados.mensagem === 'Não autorizado.') {
+      err.naoAutorizado = true;
+      esquecerToken(); // o próximo envio pede o token de novo
+    }
+    throw err;
+  }
+  return dados;
+}
+
 function apiGet(action, params) {
-  var url = API_BASE_URL + '?action=' + encodeURIComponent(action);
+  var url = API_BASE_URL + '?action=' + encodeURIComponent(action) +
+            '&token=' + encodeURIComponent(obterToken());
   if (params) {
     Object.keys(params).forEach(function (chave) {
       url += '&' + encodeURIComponent(chave) + '=' + encodeURIComponent(params[chave]);
     });
   }
   return fetch(url).then(function (resposta) { return resposta.json(); })
-    .then(function (dados) {
-      if (dados && dados.erro) throw new Error(dados.mensagem || 'Erro desconhecido na API');
-      return dados;
-    });
+    .then(tratarRespostaApi);
 }
 
 function apiPost(action, payload) {
   return fetch(API_BASE_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ action: action, payload: payload })
+    body: JSON.stringify({ token: obterToken(), action: action, payload: payload })
   }).then(function (resposta) { return resposta.json(); })
-    .then(function (dados) {
-      if (dados && dados.erro) throw new Error(dados.mensagem || 'Erro desconhecido na API');
-      return dados;
-    });
+    .then(tratarRespostaApi);
 }
 
 /**
@@ -48,10 +81,27 @@ window.addEventListener('beforeunload', function (e) {
  */
 const WORKOUT_STORAGE_KEY = 'WORKOUT_LOGGER_RASCUNHO';
 
+function escaparHtml(valor) {
+  return String(valor === null || valor === undefined ? '' : valor)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ID único por registro, gerado UMA vez quando o payload é criado.
+// Reenvios da fila offline levam o mesmo ID, então o servidor ignora duplicatas.
+function gerarIdRegistro() {
+  return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+
+// Série "de trabalho" = não é aquecimento (flag nova ou prefixo antigo na observação)
+function ehSerieTrabalho(s) {
+  return !(s && (s.aquecimento === true || String(s.observacao || '').indexOf('[Aquecimento]') === 0));
+}
+
 const WorkoutCache = {
   salvar: function() {
     try {
-      var inputs = document.querySelectorAll('input, select, textarea');
+      var inputs = document.querySelectorAll('#input-obs-geral');
       var dadosInputs = {};
 
       inputs.forEach(function(input, idx) {
@@ -149,6 +199,8 @@ const SessaoCache = {
  * para a planilha, um item de cada vez, na ordem em que foram criados.
  */
 const WORKOUT_FILA_KEY = 'WORKOUT_LOGGER_FILA_PENDENTE';
+// Itens que o servidor recusou 5 vezes (ficam guardados aqui para você recuperar manualmente)
+const WORKOUT_FALHAS_KEY = 'WORKOUT_LOGGER_FILA_FALHAS';
 
 const FilaOffline = {
   listar: function () {
@@ -204,9 +256,11 @@ const FilaOffline = {
     var item = lista[0];
     this.processando = true;
 
-    var finalizarProcessamento = function () {
+    // Só chama processar() de novo quando o item foi resolvido (enviado ou descartado).
+    // Em caso de falha, para aqui: a próxima tentativa vem do timer de 30s ou do evento 'online'.
+    var finalizarProcessamento = function (continuar) {
       FilaOffline.processando = false;
-      FilaOffline.processar();
+      if (continuar) FilaOffline.processar();
     };
 
     var acaoPorTipo = {
@@ -218,18 +272,42 @@ const FilaOffline = {
 
     if (!acao) {
       FilaOffline.remover(item.id);
-      finalizarProcessamento();
+      finalizarProcessamento(true);
       return;
     }
 
     apiPost(acao, item.payload)
       .then(function () {
         FilaOffline.remover(item.id);
-        finalizarProcessamento();
+        finalizarProcessamento(true);
       })
       .catch(function (err) {
         console.warn('Falha ao sincronizar item da fila offline, tentando novamente mais tarde:', err);
-        finalizarProcessamento();
+
+        // Erro vindo do servidor (não de rede/autorização): conta tentativa.
+        // Depois de 5, o item vai para a lista de falhas em vez de travar a fila.
+        if (err && err.erroApi && !err.naoAutorizado) {
+          var atual = FilaOffline.listar();
+          var idx = atual.findIndex(function (i) { return i.id === item.id; });
+          if (idx !== -1) {
+            atual[idx].tentativas = (atual[idx].tentativas || 0) + 1;
+            if (atual[idx].tentativas >= 5) {
+              var falho = atual.splice(idx, 1)[0];
+              falho.ultimoErro = err.message;
+              try {
+                var falhas = JSON.parse(localStorage.getItem(WORKOUT_FALHAS_KEY) || '[]');
+                falhas.push(falho);
+                localStorage.setItem(WORKOUT_FALHAS_KEY, JSON.stringify(falhas));
+              } catch (e) {}
+              FilaOffline.salvarLista(atual);
+              atualizarStatusConexao();
+              finalizarProcessamento(true);
+              return;
+            }
+            FilaOffline.salvarLista(atual);
+          }
+        }
+        finalizarProcessamento(false);
       });
   }
 };
@@ -375,8 +453,11 @@ var app = (function () {
   // REGISTRO DE CARDIO
   var motivacaoCardioSelecionada = null;
 
+  // Fica true enquanto o relatório final está na tela, antes de "Salvar e Encerrar"
+  var relatorioPendente = false;
+
   function isTreinoAtivo() {
-    return estado.timerTreinoId !== null;
+    return estado.timerTreinoId !== null || relatorioPendente;
   }
 
   // CÁLCULO DE 1RM ESTIMADO (FÓRMULA DE EPLEY) — ESPELHA Relatorios.calcular1RM NO BACKEND
@@ -444,7 +525,7 @@ var app = (function () {
   function atualizarBotaoTelaAtiva(ativo) {
     var btn = document.getElementById('btn-tela-ativa');
     if (!btn) return;
-    btn.innerText = ativo ? '🔓 Tela ativa (toque para permitir suspender)' : '🔒 Manter tela ativa durante o treino';
+    btn.innerText = ativo ? '✅ Tela ativa (toque para desligar)' : '🔒 Manter tela ativa durante o treino';
     btn.classList.toggle('tela-ativa-ligada', ativo);
   }
 
@@ -502,7 +583,7 @@ var app = (function () {
   // ESPELHAM Relatorios.gs — usadas para dar um resumo imediato quando offline
   function calcularVolumeExercicioCliente(series) {
     var total = 0;
-    series.forEach(function (s) {
+    series.filter(ehSerieTrabalho).forEach(function (s) {
       total += (parseFloat(s.peso) || 0) * (parseInt(s.repeticoes, 10) || 0);
     });
     return total;
@@ -510,7 +591,7 @@ var app = (function () {
 
   function calcularRpeMedioCliente(series) {
     var soma = 0, contador = 0;
-    series.forEach(function (s) {
+    series.filter(ehSerieTrabalho).forEach(function (s) {
       var r = parseFloat(s.rpe) || 0;
       if (r > 0) { soma += r; contador++; }
     });
@@ -519,7 +600,7 @@ var app = (function () {
 
   function calcularMaior1RMCliente(series) {
     var maior = 0;
-    series.forEach(function (s) {
+    series.filter(ehSerieTrabalho).forEach(function (s) {
       var est = calcular1RM(s.peso, s.repeticoes);
       if (est > maior) maior = est;
     });
@@ -714,6 +795,7 @@ var app = (function () {
       pararTimerDescanso();
       liberarTelaAtiva();
       SessaoCache.limpar();
+      relatorioPendente = false;
 
       document.getElementById('timer-display').classList.add('hidden');
       document.getElementById('app-title').innerText = "Workout Logger";
@@ -810,6 +892,7 @@ var app = (function () {
     }
 
     var payload = {
+      idRegistro: gerarIdRegistro(),
       academia: estado.academiaAtual,
       tipo: tipo,
       duracao: duracao,
@@ -1041,10 +1124,10 @@ var app = (function () {
     }
 
     var serieAtualNum = estado.seriesExercicioAtual.length + 1;
-    var html = '<div style="font-size:0.75rem; color:var(--primary); margin-bottom:6px; font-weight:600;">DATA: ' + historico.data + '</div>';
+    var html = '<div style="font-size:0.75rem; color:var(--primary); margin-bottom:6px; font-weight:600;">DATA: ' + escaparHtml(historico.data) + '</div>';
 
     historico.series.forEach(function (s) {
-      var obsText = s.observacao ? ' <span style="color:var(--text-muted);">(' + s.observacao + ')</span>' : '';
+      var obsText = s.observacao ? ' <span style="color:var(--text-muted);">(' + escaparHtml(s.observacao) + ')</span>' : '';
       var classeAtual = (s.numeroSerie === serieAtualNum) ? ' history-item-atual' : '';
       html += '<div class="history-item' + classeAtual + '">' +
                 '<span>S' + s.numeroSerie + ': ' + s.peso + 'kg x ' + s.repeticoes + ' reps</span>' +
@@ -1081,6 +1164,7 @@ var app = (function () {
       repeticoes: reps,
       rpe: rpe,
       observacao: observacaoFinal,
+      aquecimento: estado.isAquecimento,
       est1RM: calcular1RM(peso, reps)
     };
 
@@ -1114,6 +1198,9 @@ var app = (function () {
     var limpaObs = s.observacao ? s.observacao.replace("[Aquecimento] ", "") : "";
     document.getElementById('input-obs-serie').value = limpaObs;
 
+    // Editar um aquecimento não pode transformá-lo em série de trabalho
+    if (!ehSerieTrabalho(s) !== estado.isAquecimento) toggleAquecimento();
+
     document.getElementById('form-serie-titulo').innerText = "Editar Série S" + (index + 1);
     document.getElementById('btn-salvar-serie').innerText = "Atualizar Série";
     document.getElementById('btn-cancelar-edicao').classList.remove('hidden');
@@ -1142,14 +1229,14 @@ var app = (function () {
 
     // Maior 1RM da sessão até agora, usado para destacar a série recordista
     var maior1RMSessao = 0;
-    estado.seriesExercicioAtual.forEach(function (s) {
+    estado.seriesExercicioAtual.filter(ehSerieTrabalho).forEach(function (s) {
       var est = (typeof s.est1RM === 'number') ? s.est1RM : calcular1RM(s.peso, s.repeticoes);
       if (est > maior1RMSessao) maior1RMSessao = est;
     });
 
     estado.seriesExercicioAtual.forEach(function (s, index) {
       var est1RM = (typeof s.est1RM === 'number') ? s.est1RM : calcular1RM(s.peso, s.repeticoes);
-      var ehRecorde = est1RM > 0 && est1RM === maior1RMSessao;
+      var ehRecorde = ehSerieTrabalho(s) && est1RM > 0 && est1RM === maior1RMSessao;
       var corRM = ehRecorde ? 'var(--primary)' : '#e4e4e7';
       var peso1RM = ehRecorde ? '700' : '400';
 
@@ -1160,7 +1247,7 @@ var app = (function () {
                      '<td style="padding: 10px 0;">' + s.repeticoes + '</td>' +
                      '<td style="padding: 10px 0;">' + (s.rpe || '-') + '</td>' +
                      '<td style="padding: 10px 0; color:' + corRM + '; font-weight:' + peso1RM + ';">' + est1RM.toFixed(1) + ' kg' + (ehRecorde ? ' 🏆' : '') + '</td>' +
-                     '<td style="padding: 10px 0; font-size:0.75rem; color:#a1a1aa;">' + (s.observacao || '-') + '</td>' +
+                     '<td style="padding: 10px 0; font-size:0.75rem; color:#a1a1aa;">' + escaparHtml(s.observacao || '-') + '</td>' +
                      '<td style="padding: 10px 0; text-align:right;"><button type="button" style="background:transparent; border:none; color:#7c3aed; font-size:0.8rem; cursor:pointer;" onclick="app.editarSerie(' + index + ')">Editar</button></td>';
       tbody.appendChild(tr);
     });
@@ -1180,6 +1267,7 @@ var app = (function () {
     var seriesDoExercicio = estado.seriesExercicioAtual;
 
     var payload = {
+      idRegistro: gerarIdRegistro(),
       treino: estado.rotinaAtual,
       exercicio: exAtual.exercicio,
       tempoExercicio: tempoFormatado,
@@ -1444,22 +1532,25 @@ var app = (function () {
     var totalSeriesGeral = 0;
     var maior1RMGeral = 0;
 
+    var contadorRpe = 0;
     estado.resumoExerciciosFinalizados.forEach(function (ex) {
       cargaTotal += ex.volume;
-      totalSeriesGeral += ex.seriesCount;
 
       if (ex.maior1RM > maior1RMGeral) {
         maior1RMGeral = ex.maior1RM;
       }
 
-      ex.seriesData.forEach(function (s) {
+      // Aquecimento fica fora das contas; RPE médio divide só pelas séries que têm RPE
+      ex.seriesData.filter(ehSerieTrabalho).forEach(function (s) {
+        totalSeriesGeral++;
         if (s.rpe > 0) {
           somaRpeGeral += s.rpe;
+          contadorRpe++;
         }
       });
     });
 
-    var rpeMedioGeral = totalSeriesGeral > 0 ? (somaRpeGeral / totalSeriesGeral) : 0;
+    var rpeMedioGeral = contadorRpe > 0 ? (somaRpeGeral / contadorRpe) : 0;
     var indiceFadiga = cargaTotal * rpeMedioGeral;
 
     document.getElementById('relatorio-tempo').innerText = tempoTotalStr;
@@ -1474,6 +1565,7 @@ var app = (function () {
     renderizarSeriesDetalhadas();
 
     estado.dadosRelatorio = {
+      idRegistro: gerarIdRegistro(),
       nomeTreino: estado.rotinaAtual,
       academia: estado.academiaAtual,
       tempoTotal: tempoTotalStr,
@@ -1488,6 +1580,7 @@ var app = (function () {
 
     Sugestoes.preencherDatalist('lista-academias', WORKOUT_ACADEMIAS_KEY);
 
+    relatorioPendente = true;
     mostrarTela('tela-relatorio');
   }
 
@@ -1504,11 +1597,11 @@ var app = (function () {
     var html = '';
     estado.resumoExerciciosFinalizados.forEach(function (ex) {
       html += '<div class="relatorio-exercicio-bloco">';
-      html += '<div class="relatorio-exercicio-nome">' + ex.exercicio + '</div>';
+      html += '<div class="relatorio-exercicio-nome">' + escaparHtml(ex.exercicio) + '</div>';
 
       ex.seriesData.forEach(function (s, i) {
         var est1RM = (typeof s.est1RM === 'number') ? s.est1RM : calcular1RM(s.peso, s.repeticoes);
-        var obsText = s.observacao ? ' — ' + s.observacao : '';
+        var obsText = s.observacao ? ' — ' + escaparHtml(s.observacao) : '';
         html += '<div class="relatorio-serie-linha">' +
                   '<span>S' + (i + 1) + ': ' + s.peso + 'kg x ' + s.repeticoes + ' (RPE ' + (s.rpe || '-') + ')' + obsText + '</span>' +
                   '<span>1RM ' + est1RM.toFixed(1) + 'kg</span>' +
@@ -1528,6 +1621,7 @@ var app = (function () {
     var relatorio = estado.dadosRelatorio;
 
     function concluirNaTela() {
+      relatorioPendente = false;
       WorkoutCache.limpar();
       SessaoCache.limpar();
       liberarTelaAtiva();
