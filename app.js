@@ -704,6 +704,7 @@ var app = (function () {
     document.getElementById('tela-treino').classList.add('hidden');
     document.getElementById('tela-relatorio').classList.add('hidden');
     document.getElementById('tela-cardio-registro').classList.add('hidden');
+    document.getElementById('tela-progresso').classList.add('hidden');
     document.getElementById(idTela).classList.remove('hidden');
 
     if (idTela === 'tela-menu') {
@@ -1081,17 +1082,25 @@ var app = (function () {
     atualizarTabelaSeries();
     iniciarTimerExercicio();
 
+    estado.recordeAtual = null;
     mostrarLoading('Buscando histórico...');
-    apiGet('historicoExercicio', { exercicio: ex.exercicio })
-      .then(function (historico) {
+    Promise.all([
+      apiGet('historicoExercicio', { exercicio: ex.exercicio }),
+      // O recorde é opcional: se falhar, o treino segue normalmente
+      apiGet('recordesExercicio', { exercicio: ex.exercicio }).catch(function () { return null; })
+    ])
+      .then(function (resultados) {
         ocultarLoading();
-        estado.historicoExercicioAtual = historico;
-        renderizarHistorico(historico);
+        estado.historicoExercicioAtual = resultados[0];
+        estado.recordeAtual = resultados[1];
+        renderizarHistorico(resultados[0]);
+        atualizarTabelaSeries();
         mostrarTela('tela-treino');
       })
       .catch(function (err) {
         ocultarLoading();
         estado.historicoExercicioAtual = null;
+        estado.recordeAtual = null;
         renderizarHistorico(null);
         mostrarTela('tela-treino');
       });
@@ -1118,13 +1127,21 @@ var app = (function () {
     var container = document.getElementById('ex-historico-conteudo');
     container.innerHTML = '';
 
+    var faixaRecorde = '';
+    var rec = estado.recordeAtual;
+    if (rec && rec.rm && rec.rm.valor > 0) {
+      faixaRecorde = '<div style="font-size:0.8rem; margin-bottom:8px; color:var(--text-main);">🏆 Seu recorde: <strong style="color:var(--primary);">' +
+        rec.rm.valor.toFixed(1) + ' kg</strong> de 1RM est. (' + rec.rm.peso + 'kg x ' + rec.rm.reps + ') · maior carga <strong>' +
+        rec.carga.peso + ' kg</strong></div>';
+    }
+
     if (!historico || !historico.series || historico.series.length === 0) {
-      container.innerHTML = '<p style="font-size:0.85rem; color:var(--text-muted);">Nenhum registro anterior encontrado.</p>';
+      container.innerHTML = faixaRecorde + '<p style="font-size:0.85rem; color:var(--text-muted);">Nenhum registro anterior encontrado.</p>';
       return;
     }
 
     var serieAtualNum = estado.seriesExercicioAtual.length + 1;
-    var html = '<div style="font-size:0.75rem; color:var(--primary); margin-bottom:6px; font-weight:600;">DATA: ' + escaparHtml(historico.data) + '</div>';
+    var html = faixaRecorde + '<div style="font-size:0.75rem; color:var(--primary); margin-bottom:6px; font-weight:600;">DATA: ' + escaparHtml(historico.data) + '</div>';
 
     historico.series.forEach(function (s) {
       var obsText = s.observacao ? ' <span style="color:var(--text-muted);">(' + escaparHtml(s.observacao) + ')</span>' : '';
@@ -1237,6 +1254,8 @@ var app = (function () {
     estado.seriesExercicioAtual.forEach(function (s, index) {
       var est1RM = (typeof s.est1RM === 'number') ? s.est1RM : calcular1RM(s.peso, s.repeticoes);
       var ehRecorde = ehSerieTrabalho(s) && est1RM > 0 && est1RM === maior1RMSessao;
+      var superaRecorde = ehSerieTrabalho(s) && estado.recordeAtual && estado.recordeAtual.rm &&
+                          estado.recordeAtual.rm.valor > 0 && est1RM > estado.recordeAtual.rm.valor + 0.05;
       var corRM = ehRecorde ? 'var(--primary)' : '#e4e4e7';
       var peso1RM = ehRecorde ? '700' : '400';
 
@@ -1246,7 +1265,7 @@ var app = (function () {
                      '<td style="padding: 10px 0;">' + s.peso + ' kg</td>' +
                      '<td style="padding: 10px 0;">' + s.repeticoes + '</td>' +
                      '<td style="padding: 10px 0;">' + (s.rpe || '-') + '</td>' +
-                     '<td style="padding: 10px 0; color:' + corRM + '; font-weight:' + peso1RM + ';">' + est1RM.toFixed(1) + ' kg' + (ehRecorde ? ' 🏆' : '') + '</td>' +
+                     '<td style="padding: 10px 0; color:' + corRM + '; font-weight:' + peso1RM + ';">' + est1RM.toFixed(1) + ' kg' + (ehRecorde ? ' 🏆' : '') + (superaRecorde ? ' 🔥PR' : '') + '</td>' +
                      '<td style="padding: 10px 0; font-size:0.75rem; color:#a1a1aa;">' + escaparHtml(s.observacao || '-') + '</td>' +
                      '<td style="padding: 10px 0; text-align:right;"><button type="button" style="background:transparent; border:none; color:#7c3aed; font-size:0.8rem; cursor:pointer;" onclick="app.editarSerie(' + index + ')">Editar</button></td>';
       tbody.appendChild(tr);
@@ -1275,6 +1294,9 @@ var app = (function () {
     };
 
     function avancarParaProximo(resumo) {
+      if (resumo && resumo.novosRecordes && resumo.novosRecordes.length > 0) {
+        mostrarAvisoRecorde(exAtual.exercicio, resumo.novosRecordes);
+      }
       estado.resumoExerciciosFinalizados.push({
         exercicio: exAtual.exercicio,
         seriesCount: seriesDoExercicio.length,
@@ -1343,6 +1365,186 @@ var app = (function () {
       estado.tempoTreinoSegundos = Math.floor(msPassados / 1000);
       document.getElementById('timer-display').innerText = formatarTempo(estado.tempoTreinoSegundos);
     }, 1000);
+  }
+
+  // ---------- RECORDES E PROGRESSO ----------
+
+  function mostrarAvisoRecorde(exercicio, novos) {
+    var partes = novos.map(function (n) {
+      if (n.tipo === '1RM') return '1RM est. ' + n.valor + ' kg (antes ' + n.anterior + ')';
+      if (n.tipo === 'Carga') return 'carga ' + n.valor + ' kg x ' + n.reps + ' (antes ' + n.anterior + ' kg)';
+      return 'volume ' + n.valor + ' kg (antes ' + n.anterior + ')';
+    });
+
+    var aviso = document.createElement('div');
+    aviso.style.cssText = 'position:fixed; left:12px; right:12px; top:12px; z-index:1000; max-width:456px; margin:0 auto;' +
+      'background:var(--primary); color:#fff; padding:12px 14px; border-radius:12px; font-size:0.85rem;' +
+      'font-weight:600; box-shadow:0 6px 20px rgba(0,0,0,0.5);';
+    aviso.innerHTML = '🏆 Novo recorde em ' + escaparHtml(exercicio) + '!<br><span style="font-weight:500;">' +
+      escaparHtml(partes.join(' · ')) + '</span>';
+    document.body.appendChild(aviso);
+    if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+    setTimeout(function () { if (aviso.parentNode) aviso.parentNode.removeChild(aviso); }, 6000);
+  }
+
+  var progressoMetrica = 'rm';
+  var progressoPontos = [];
+
+  function abrirProgresso() {
+    mostrarLoading('Carregando progresso...');
+    Promise.all([apiGet('exerciciosComHistorico'), apiGet('recordesTodos')])
+      .then(function (r) {
+        ocultarLoading();
+        var lista = r[0] || [];
+        var select = document.getElementById('select-progresso-exercicio');
+        select.innerHTML = '';
+        lista.forEach(function (nome) {
+          var opt = document.createElement('option');
+          opt.value = nome;
+          opt.innerText = nome;
+          select.appendChild(opt);
+        });
+
+        renderizarTodosRecordes(r[1] || []);
+        mostrarTela('tela-progresso');
+
+        if (lista.length > 0) {
+          carregarProgressoExercicio(lista[0]);
+        } else {
+          document.getElementById('progresso-recordes').innerHTML = textoVazio('Nenhum exercício registrado ainda.');
+          document.getElementById('grafico-progresso').innerHTML = '';
+        }
+      })
+      .catch(function (err) {
+        ocultarLoading();
+        alert('Não foi possível carregar o progresso (precisa de internet): ' + err.message);
+      });
+  }
+
+  function textoVazio(msg) {
+    return '<p style="font-size:0.85rem; color:var(--text-muted);">' + escaparHtml(msg) + '</p>';
+  }
+
+  function carregarProgressoExercicio(nome) {
+    if (!nome) return;
+    mostrarLoading('Carregando ' + nome + '...');
+    Promise.all([
+      apiGet('progressoExercicio', { exercicio: nome }),
+      apiGet('recordesExercicio', { exercicio: nome }).catch(function () { return null; })
+    ])
+      .then(function (r) {
+        ocultarLoading();
+        progressoPontos = r[0] || [];
+        renderizarRecordesExercicio(r[1]);
+        desenharGraficoProgresso();
+      })
+      .catch(function (err) {
+        ocultarLoading();
+        alert('Erro ao carregar o exercício: ' + err.message);
+      });
+  }
+
+  function selecionarMetricaProgresso(metrica) {
+    progressoMetrica = metrica;
+    document.querySelectorAll('#seletor-metrica .motivacao-opcao').forEach(function (btn) {
+      btn.classList.toggle('selecionada', btn.dataset.metrica === metrica);
+    });
+    desenharGraficoProgresso();
+  }
+
+  function renderizarRecordesExercicio(rec) {
+    var c = document.getElementById('progresso-recordes');
+    if (!rec || !rec.rm || rec.rm.valor <= 0) {
+      c.innerHTML = textoVazio('Sem recordes registrados para este exercício ainda.');
+      return;
+    }
+    var sub = 'font-size:0.7rem; color:var(--text-muted);';
+    c.innerHTML = '<div class="metrics-grid">' +
+      '<div class="metric-card"><span class="label">1RM estimado</span><span class="value">' + rec.rm.valor.toFixed(1) + ' kg</span>' +
+        '<span style="' + sub + '">' + rec.rm.peso + 'kg x ' + rec.rm.reps + ' · ' + escaparHtml(rec.rm.data) + '</span></div>' +
+      '<div class="metric-card"><span class="label">Maior carga</span><span class="value">' + rec.carga.peso + ' kg</span>' +
+        '<span style="' + sub + '">x ' + rec.carga.reps + ' reps · ' + escaparHtml(rec.carga.data) + '</span></div>' +
+      '<div class="metric-card" style="grid-column: span 2;"><span class="label">Maior volume em uma sessão</span><span class="value">' +
+        rec.volume.valor.toFixed(0) + ' kg</span><span style="' + sub + '">' + escaparHtml(rec.volume.data) + '</span></div>' +
+      '</div>';
+  }
+
+  function renderizarTodosRecordes(lista) {
+    var c = document.getElementById('progresso-todos-recordes');
+    if (!lista.length) {
+      c.innerHTML = textoVazio('Os recordes aparecem aqui conforme você treina.');
+      return;
+    }
+    var html = '';
+    lista.forEach(function (r) {
+      html += '<div class="history-item"><span>' + escaparHtml(r.exercicio) + '</span><span>' +
+        r.rm.valor.toFixed(1) + ' kg 1RM · ' + r.carga.peso + ' kg</span></div>';
+    });
+    c.innerHTML = html;
+  }
+
+  // Gráfico de linha em SVG puro (sem bibliotecas, funciona no PWA e no Apps Script)
+  function desenharGraficoProgresso() {
+    var c = document.getElementById('grafico-progresso');
+    var cfg = {
+      rm: { campo: 'rm', titulo: '1RM estimado (kg)', casas: 1 },
+      volume: { campo: 'volume', titulo: 'Volume por sessão (kg)', casas: 0 },
+      rpe: { campo: 'rpe', titulo: 'RPE médio', casas: 1 }
+    }[progressoMetrica];
+
+    var pontos = progressoPontos
+      .filter(function (p) { return p[cfg.campo] > 0; })
+      .map(function (p) {
+        var d = p.data.split('-');
+        return { rotulo: d[2] + '/' + d[1], valor: p[cfg.campo] };
+      });
+
+    if (pontos.length < 2) {
+      c.innerHTML = textoVazio(pontos.length === 1
+        ? 'Só há 1 registro até agora. O gráfico aparece a partir do segundo treino.'
+        : 'Sem dados para este gráfico ainda.');
+      return;
+    }
+
+    var W = 320, H = 190, mE = 40, mD = 12, mT = 14, mB = 26;
+    var valores = pontos.map(function (p) { return p.valor; });
+    var min = Math.min.apply(null, valores), max = Math.max.apply(null, valores);
+    if (min === max) { min = min * 0.95; max = max * 1.05; }
+    var folga = (max - min) * 0.1;
+    min -= folga; max += folga;
+
+    function x(i) { return mE + (i * (W - mE - mD)) / (pontos.length - 1); }
+    function y(v) { return mT + (1 - (v - min) / (max - min)) * (H - mT - mB); }
+
+    var linha = pontos.map(function (p, i) { return (i === 0 ? 'M' : 'L') + x(i).toFixed(1) + ' ' + y(p.valor).toFixed(1); }).join(' ');
+    var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%; height:auto;" role="img" aria-label="' + escaparHtml(cfg.titulo) + '">';
+
+    for (var g = 0; g <= 3; g++) {
+      var vg = min + ((max - min) * g) / 3;
+      svg += '<line x1="' + mE + '" x2="' + (W - mD) + '" y1="' + y(vg).toFixed(1) + '" y2="' + y(vg).toFixed(1) + '" stroke="var(--border-color)" stroke-width="1"/>' +
+             '<text x="' + (mE - 5) + '" y="' + (y(vg) + 3).toFixed(1) + '" text-anchor="end" font-size="9" fill="var(--text-muted)">' + vg.toFixed(cfg.casas) + '</text>';
+    }
+
+    svg += '<path d="' + linha + '" fill="none" stroke="var(--primary)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+    pontos.forEach(function (p, i) {
+      svg += '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(p.valor).toFixed(1) + '" r="3.5" fill="var(--primary)"><title>' +
+             escaparHtml(p.rotulo + ': ' + p.valor.toFixed(cfg.casas)) + '</title></circle>';
+    });
+
+    var passo = Math.max(1, Math.ceil(pontos.length / 5));
+    pontos.forEach(function (p, i) {
+      if (i % passo === 0 || i === pontos.length - 1) {
+        svg += '<text x="' + x(i).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="9" fill="var(--text-muted)">' + p.rotulo + '</text>';
+      }
+    });
+    svg += '</svg>';
+
+    var primeiro = pontos[0].valor, ultimo = pontos[pontos.length - 1].valor;
+    var delta = primeiro > 0 ? ((ultimo - primeiro) / primeiro) * 100 : 0;
+    var sinal = delta >= 0 ? '+' : '';
+    c.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:6px;">' + escaparHtml(cfg.titulo) + '</div>' + svg +
+      '<div style="font-size:0.8rem; margin-top:8px;">Primeiro: <strong>' + primeiro.toFixed(cfg.casas) + '</strong> → Último: <strong style="color:var(--primary);">' +
+      ultimo.toFixed(cfg.casas) + '</strong> (' + sinal + delta.toFixed(1) + '%)</div>';
   }
 
   function formatarHorario(timestampMs) {
@@ -1711,6 +1913,9 @@ var app = (function () {
     salvarCardio: salvarCardio,
     mudarMesCalendario: mudarMesCalendario,
     mostrarTela: mostrarTela,
+    abrirProgresso: abrirProgresso,
+    carregarProgressoExercicio: carregarProgressoExercicio,
+    selecionarMetricaProgresso: selecionarMetricaProgresso,
     isTreinoAtivo: isTreinoAtivo
   };
 })();
